@@ -5,9 +5,18 @@ import numpy as np
 import pickle
 import os
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# Initialize model lazily
+model = None
 
-def chunk_text(text, chunk_size=1000):
+def get_model():
+    global model
+    if model is None:
+        print("Loading sentence transformer model...")
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+        print("Model loaded")
+    return model
+
+def chunk_text(text, chunk_size=500):
     chunks = []
 
     for i in range(0, len(text), chunk_size):
@@ -15,9 +24,6 @@ def chunk_text(text, chunk_size=1000):
         chunks.append(chunk)
 
     return chunks
-
-
-from pathlib import Path
 
 def chunk_text(text, chunk_size=500):
     chunks = []
@@ -31,9 +37,10 @@ def chunk_text(text, chunk_size=500):
 
 def load_docs(folder="data"):
     docs = []
+    print(f"Loading docs from {folder}")
 
     for file in Path(folder).rglob("*"):
-        if file.is_file():
+        if file.is_file() and file.suffix in [".md", ".txt"]:
             try:
                 text = file.read_text(encoding="utf-8")
 
@@ -48,6 +55,7 @@ def load_docs(folder="data"):
             except Exception as e:
                 print(f"Failed to read {file}: {e}")
 
+    print(f"Loaded {len(docs)} docs total")
     return docs
 
 def build_or_load_index(docs):
@@ -60,6 +68,7 @@ def build_or_load_index(docs):
 
     print("Building embeddings...")
 
+    model = get_model()
     texts = [doc["content"] for doc in docs]
 
     embeddings = model.encode(texts)
@@ -76,6 +85,7 @@ def build_or_load_index(docs):
 
 
 def retrieve(query, docs, index, k=3):
+    model = get_model()
     query_embedding = model.encode([query])
 
     distances, indices = index.search(
