@@ -1,3 +1,5 @@
+import re
+
 from retriever import load_docs, build_or_load_index, retrieve
 from ticket_loader import load_tickets
 from risk import assess_risk
@@ -30,6 +32,35 @@ def classify_request_type(query, risk_level):
     # Default to product issue for legitimate support requests
     return 'product_issue'
 
+
+import re
+
+def clean_response(text):
+
+    # Remove image markdown
+    text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
+
+    # Remove markdown links completely
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+
+    # Remove raw URLs
+    text = re.sub(r'http\S+', '', text)
+
+    # Remove markdown symbols
+    text = re.sub(r'[#>*`_~-]', '', text)
+
+    # Remove repeated whitespace
+    text = re.sub(r'\s+', ' ', text)
+
+    # Remove incomplete markdown/image remnants
+    text = re.sub(r'!\[.*?', '', text)
+    text = re.sub(r'\[.*?', '', text)
+    text = re.sub(r'\S*image\.png\S*', '', text)
+    text = re.sub(r'\S*KeyPairId\S*', '', text)
+
+    return text.strip()
+
+
 def process_ticket(ticket, docs):
     """Process a single ticket and return the 5 required output columns"""
     issue = str(ticket.get('Issue', '') or '')
@@ -38,17 +69,8 @@ def process_ticket(ticket, docs):
     company_key = company.lower()
     query = f"{subject} {issue}".strip()
 
-    filtered_docs = []
-    if company_key and company_key != 'none':
-        filtered_docs = [
-            d for d in docs
-            if company_key in d["path"].lower()
-        ]
-    if not filtered_docs:
-        filtered_docs = docs
-
     # Retrieve relevant documentation from the global index
-    retrieved = retrieve(query, docs, index, k=10)
+    retrieved = retrieve(query, docs, index, k=3)
     filtered_results = retrieved
     if company_key and company_key != 'none':
         filtered_results = [
@@ -57,8 +79,9 @@ def process_ticket(ticket, docs):
         ]
         if not filtered_results:
             filtered_results = retrieved
-    top_result = filtered_results[0]["content"]
 
+    top_result = filtered_results[0]["content"] if filtered_results else "No relevant documentation found."
+    top_result = clean_response(top_result[:200])
     # Assess risk level
     risk = assess_risk(query)
 
@@ -88,15 +111,18 @@ def process_ticket(ticket, docs):
     if risk == "high":
         status = "escalated"
         response = "This request requires review by a human support specialist due to security or policy concerns."
-        justification = f"High-risk keywords detected in query: {query[:100]}..."
+        justification =  "Ticket contains sensitive or high-risk content requiring human review."
     else:
         status = "replied"
-        response = f"Based on our documentation: {top_result}"
-        justification = f"Retrieved relevant information from support corpus for query: {query[:100]}..."
-
-    print(f"\nProcessing: {query[:100]}...")
-    print(f"Risk: {risk}, Status: {status}")
-
+        top_result = clean_response(top_result)   
+        response = f"Based on our support documentation: {top_result}"
+        justification = f"Retrieved relevant {product_area} information from support corpus for query: {query[:100]}..."
+    
+    if len(top_result.strip()) < 30:
+        status = "escalated"
+        response = "This request requires review by a human support specialist due to security or policy concerns."
+        justification =  "Ticket contains sensitive or high-risk content requiring human review."
+    
     return {
         'status': status,
         'product_area': product_area,
