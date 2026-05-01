@@ -25,15 +25,6 @@ def chunk_text(text, chunk_size=500):
 
     return chunks
 
-def chunk_text(text, chunk_size=500):
-    chunks = []
-
-    for i in range(0, len(text), chunk_size):
-        chunk = text[i:i+chunk_size]
-        chunks.append(chunk)
-
-    return chunks
-
 
 def load_docs(folder="data"):
     docs = []
@@ -87,7 +78,6 @@ def build_or_load_index(docs):
 def retrieve(query, docs, index, k=3):
     model = get_model()
     query_embedding = model.encode([query])
-
     distances, indices = index.search(
         np.array(query_embedding),
         k
@@ -99,3 +89,14 @@ def retrieve(query, docs, index, k=3):
         results.append(docs[i])
 
     return results
+
+def build_temp_index(docs):
+    texts = [doc["content"] for doc in docs]
+
+    model = get_model()
+    embeddings = model.encode(texts)
+
+    index = faiss.IndexFlatL2(embeddings.shape[1])
+    index.add(np.array(embeddings))
+
+    return index
